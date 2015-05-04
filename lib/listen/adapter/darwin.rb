@@ -45,7 +45,7 @@ module Listen
           _log :debug, "fsevent: #{new_path}"
           # TODO: does this preserve symlinks?
           rel_path = new_path.relative_path_from(dir).to_s
-          _queue_change(:dir, dir, rel_path, recursive: true)
+          _queue_change(:dir, dir, rel_path, {})
         end
       end
     end

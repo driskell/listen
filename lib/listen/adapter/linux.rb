@@ -52,8 +52,12 @@ module Listen
         if /1|true/ =~ ENV['LISTEN_GEM_SIMULATE_FSEVENT']
           if (event.flags & [:moved_to, :moved_from]) || _dir_event?(event)
             rel_path = path.dirname.relative_path_from(dir).to_s
+            # TODO: Is recursion needed here? Do we receive events for each
+            #       subdirectory affected?
             _queue_change(:dir, dir, rel_path, {})
           else
+            # TODO: Is recursion needed here? Do we receive events for each
+            #       subdirectory affected?
             _queue_change(:dir, dir, rel_path, {})
           end
           return

@@ -55,6 +55,8 @@ module Listen
         if full_path.directory?
           # Force dir content tracking to kick in, or we won't have
           # names of added files
+          # TODO: Can recursion be turned off? Do we receive events for each
+          #       subdirectory affected?
           _queue_change(:dir, dir, '.', recursive: true)
         elsif full_path.exist?
           path = full_path.relative_path_from(dir)

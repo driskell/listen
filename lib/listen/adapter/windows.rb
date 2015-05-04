@@ -67,8 +67,12 @@ module Listen
         when :dir
           if change.type == :removed
             # TODO: check if watched dir?
+            # TODO: Is recursion needed here? Do we receive events for each
+            #       subdirectory affected?
             _queue_change(:dir, dir, Pathname(rel_path).dirname.to_s, {})
           elsif change.type == :added
+            # TODO: Is recursion needed here? Do we receive events for each
+            #       subdirectory affected?
             _queue_change(:dir, dir, rel_path, {})
           else
             # do nothing - changed directory means either:

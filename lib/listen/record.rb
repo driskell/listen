@@ -43,19 +43,21 @@ module Listen
     end
 
     def dir_entries(dir, rel_path)
-      tree = if [nil, '', '.'].include? rel_path.to_s
-               @paths[dir.to_s]
-             else
-               @paths[dir.to_s][rel_path.to_s] ||= _auto_hash
-               @paths[dir.to_s][rel_path.to_s]
-             end
+      if [nil, '', '.'].include? rel_path.to_s
+        tree = @paths[dir.to_s]
+        exists = true
+      else
+        exists = @paths[dir.to_s].key?(rel_path.to_s)
+        @paths[dir.to_s][rel_path.to_s] ||= _auto_hash
+        tree = @paths[dir.to_s][rel_path.to_s]
+      end
 
       result = {}
       tree.each do |key, values|
         # only get data for file entries
         result[key] = values.key?(:mtime) ? values : {}
       end
-      result
+      return result, exists
     end
 
     def build
