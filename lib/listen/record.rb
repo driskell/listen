@@ -9,7 +9,13 @@ module Listen
     attr_reader :root
     def initialize(directory)
       @tree = _auto_hash
+      @tree['.'] = _auto_hash
       @root = directory.to_s
+    end
+
+    def update_dir(rel_path)
+      dirname, basename = Pathname(rel_path).split.map(&:to_s)
+      _fast_update_dir(rel_path, dirname, basename)
     end
 
     def update_file(rel_path, data)
@@ -24,7 +30,6 @@ module Listen
 
     def file_data(rel_path)
       dirname, basename = Pathname(rel_path).split.map(&:to_s)
-      dirname = '.' if [nil, '', '.'].include? dirname
       tree[dirname] ||= {}
       tree[dirname][basename] ||= {}
       tree[dirname][basename].dup
@@ -32,7 +37,6 @@ module Listen
 
     def dir_entries(rel_path)
       rel_path = rel_path.to_s
-      rel_path = '.' if [nil, '', '.'].include? rel_path
       [tree.key?(rel_path), tree[rel_path] ||= _auto_hash]
     end
 
@@ -43,7 +47,7 @@ module Listen
       # TODO: test with mixed encoding
       symlink_detector = SymlinkDetector.new
       remaining = Queue.new
-      remaining << Entry.new(root, nil, nil)
+      remaining << Entry.new(root, '.', '.')
       _fast_build_dir(remaining, symlink_detector) until remaining.empty?
     end
 
@@ -53,24 +57,17 @@ module Listen
       Hash.new { |h, k| h[k] = Hash.new }
     end
 
-    # TODO: refactor/refactor out
-    def add_dir(dir, rel_path)
-      rel_path = '.' if [nil, '', '.'].include? rel_path
-      dirname, basename = Pathname(rel_path).split.map(&:to_s)
-      basename = '.' if [nil, '', '.'].include? basename
-      root = (@paths[dir.to_s] ||= {})
-      dirname = '.' if [nil, '', '.'].include?(dirname)
-      entries = (root[dirname] || {})
-      entries.merge!(basename => {}) if basename != '.'
-      root[dirname] = entries
-    end
-
     def tree
       @tree
     end
 
+    def _fast_update_dir(record_as_key, dirname, basename)
+      tree[record_as_key] ||= {}
+      tree[dirname] ||= {}
+      tree[dirname].merge!(basename => {}) if basename != '.'
+    end
+
     def _fast_update_file(dirname, basename, data)
-      dirname = '.' if [nil, '', '.'].include? dirname
       tree[dirname] ||= {}
       tree[dirname][basename] = (tree[dirname][basename] || {}).merge(data)
     end
@@ -78,7 +75,6 @@ module Listen
     def _fast_unset_path(dirname, basename)
       # this may need to be reworked to properly remove
       # entries from a tree, without adding non-existing dirs to the record
-      dirname = '.' if [nil, '', '.'].include? dirname
       return unless tree.key?(dirname)
       tree[dirname].delete(basename)
     end
@@ -88,7 +84,7 @@ module Listen
       children = entry.children # NOTE: children() implicitly tests if dir
       symlink_detector.verify_unwatched!(entry)
       children.each { |child| remaining << child }
-      add_dir(entry.record_dir_key)
+      _fast_update_dir(entry.record_as_key, entry.relative, entry.name)
     rescue Errno::ENOTDIR
       _fast_try_file(entry)
     rescue SystemCallError, SymlinkDetector::Error
