@@ -28,7 +28,6 @@ module Listen
       tree[dirname] ||= {}
       tree[dirname][basename] ||= {}
       tree[dirname][basename].dup
-      end
     end
 
     def dir_entries(rel_path)
@@ -82,7 +81,6 @@ module Listen
       dirname = '.' if [nil, '', '.'].include? dirname
       return unless tree.key?(dirname)
       tree[dirname].delete(basename)
-      end
     end
 
     def _fast_build_dir(remaining, symlink_detector)
