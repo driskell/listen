@@ -36,8 +36,10 @@ module Listen
     end
 
     def dir_entries(dir, rel_path)
-      rel_path = '.' if [nil, '', '.'].include? rel_path.to_s
-      @paths[dir.to_s][rel_path.to_s] ||= {}
+      rel_path = rel_path.to_s
+      rel_path = '.' if [nil, '', '.'].include? rel_path
+      dir = @paths[dir.to_s]
+      [dir.key?(rel_path), dir[rel_path] ||= {}]
     end
 
     def build
@@ -63,13 +65,10 @@ module Listen
       dirname, basename = Pathname(rel_path).split.map(&:to_s)
       basename = '.' if [nil, '', '.'].include? basename
       root = (@paths[dir.to_s] ||= {})
-      if [nil, '', '.'].include?(dirname)
-        entries = (root['.'] || {})
-        entries.merge!(basename => {}) if basename != '.'
-        root['.'] = entries
-      else
-        root[rel_path] ||= {}
-      end
+      dirname = '.' if [nil, '', '.'].include?(dirname)
+      entries = (root[dirname] || {})
+      entries.merge!(basename => {}) if basename != '.'
+      root[dirname] = entries
     end
 
     def _fast_update_file(dir, dirname, basename, data)
