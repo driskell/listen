@@ -14,6 +14,10 @@ module Listen
 
       # NOTE: each directory gets a DIFFERENT callback!
       def _configure(dir, &callback)
+        if /1|true/ =~ ENV['LISTEN_GEM_FSEVENT_NO_RECURSION']
+          STDERR.puts "WARNING: Recursive scanning is disabled, which should"\
+            " be faster, but not all changes may be properly detected yet."
+        end
         require 'rb-fsevent'
         opts = { latency: options.latency }
 
@@ -45,7 +49,14 @@ module Listen
           _log :debug, "fsevent: #{new_path}"
           # TODO: does this preserve symlinks?
           rel_path = new_path.relative_path_from(dir).to_s
-          _queue_change(:dir, dir, rel_path, recursive: true)
+
+          options =
+            if /1|true/ =~ ENV['LISTEN_GEM_FSEVENT_NO_RECURSION']
+              {}
+            else
+              {recursion: true}
+            end
+          _queue_change(:dir, dir, rel_path, options)
         end
       end
     end

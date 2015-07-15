@@ -47,16 +47,18 @@ RSpec.describe Listen::Record do
   end
 
   describe '#update_file' do
+    before { build_watched_dir(record, dir) }
+
     context 'with path in watched dir' do
       it 'sets path by spliting dirname and basename' do
         record.update_file('file.rb', mtime: 1.1)
-        expect(record_tree(record)).to eq('file.rb' => { mtime: 1.1 })
+        expect(record_tree(record)).to eq('.' => {'file.rb' => { mtime: 1.1 }})
       end
 
       it 'sets path and keeps old data not overwritten' do
         record.update_file('file.rb', foo: 1, bar: 2)
         record.update_file('file.rb', foo: 3)
-        watched_dir = record_tree(record)
+        watched_dir = record_tree(record)['.']
         expect(watched_dir).to eq('file.rb' => { foo: 3, bar: 2 })
       end
     end
@@ -76,20 +78,21 @@ RSpec.describe Listen::Record do
     end
   end
 
+  # TODO: refactor/refactor out
   describe '#add_dir' do
     it 'sets itself when .' do
       record.add_dir('.')
-      expect(record_tree(record)).to eq({})
+      expect(record_tree(record)).to eq('.' => {})
     end
 
     it 'sets itself when nil' do
       record.add_dir(nil)
-      expect(record_tree(record)).to eq({})
+      expect(record_tree(record)).to eq('.' => {})
     end
 
     it 'sets itself when empty' do
       record.add_dir('')
-      expect(record_tree(record)).to eq({})
+      expect(record_tree(record)).to eq('.' => {})
     end
 
     it 'correctly sets new directory data' do
@@ -115,20 +118,22 @@ RSpec.describe Listen::Record do
   end
 
   describe '#unset_path' do
+    before { build_watched_dir(record, dir) }
+
     context 'within watched dir' do
       context 'when path is present' do
         before { record.update_file('file.rb', mtime: 1.1) }
 
         it 'unsets path' do
           record.unset_path('file.rb')
-          expect(record_tree(record)).to eq({})
+          expect(record_tree(record)).to eq('.' => {})
         end
       end
 
       context 'when path not present' do
         it 'unsets path' do
           record.unset_path('file.rb')
-          expect(record_tree(record)).to eq({})
+          expect(record_tree(record)).to eq('.' => {})
         end
       end
     end
@@ -139,20 +144,21 @@ RSpec.describe Listen::Record do
 
         it 'unsets path' do
           record.unset_path('path/file.rb')
-          expect(record_tree(record)).to eq('path' => {})
+          expect(record_tree(record)).to eq('.' => {'path' => {}}, 'path' => {} )
         end
       end
 
       context 'when path not present' do
         it 'unsets path' do
           record.unset_path('path/file.rb')
-          expect(record_tree(record)).to eq({})
+          expect(record_tree(record)).to eq('.' => {})
         end
       end
     end
   end
 
   describe '#file_data' do
+    before { build_watched_dir(record, dir) }
     context 'with path in watched dir' do
       context 'when path is present' do
         before { record.update_file('file.rb', mtime: 1.1) }
@@ -188,6 +194,8 @@ RSpec.describe Listen::Record do
   end
 
   describe '#dir_entries' do
+    before { build_watched_dir(record, dir) }
+
     context 'in watched dir' do
       subject { record.dir_entries('.') }
 
@@ -263,8 +271,10 @@ RSpec.describe Listen::Record do
         record.build
         expect(record_tree(record)).
           to eq(
-            'foo' => { mtime: 1.0, mode: 0644 },
-            'bar' => { mtime: 2.3, mode: 0755 })
+            '.' => {
+              'foo' => { mtime: 1.0, mode: 0644 },
+              'bar' => { mtime: 2.3, mode: 0755 }
+            })
       end
     end
 
@@ -281,7 +291,8 @@ RSpec.describe Listen::Record do
         record.build
         expect(record_tree(record)).
           to eq(
-            'dir1' => {},
+            '.' => {'dir1' => {}, 'dir2' => {}},
+            'dir1' => {'foo' => {}},
             'dir1/foo' => { 'bar' => { mtime: 2.3, mode: 0755 } },
             'dir2' => {},
         )
@@ -304,8 +315,9 @@ RSpec.describe Listen::Record do
         record.build
         expect(record_tree(record)).
           to eq(
-            'dir1' => {},
-            'dir1/foo' => {},
+            '.' => {'dir1' => {}, 'dir2' => {}},
+            'dir1' => {'foo' => {}},
+            'dir1/foo' => {'bar' => {}, 'baz' => {}},
             'dir1/foo/bar' => {},
             'dir1/foo/baz' => {},
             'dir2' => {},

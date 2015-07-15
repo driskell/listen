@@ -12,11 +12,6 @@ module Listen
       @root = directory.to_s
     end
 
-    def add_dir(rel_path)
-      return if [nil, '', '.'].include? rel_path
-      @tree[rel_path] ||= {}
-    end
-
     def update_file(rel_path, data)
       dirname, basename = Pathname(rel_path).split.map(&:to_s)
       _fast_update_file(dirname, basename, data)
@@ -29,31 +24,17 @@ module Listen
 
     def file_data(rel_path)
       dirname, basename = Pathname(rel_path).split.map(&:to_s)
-      if [nil, '', '.'].include? dirname
-        tree[basename] ||= {}
-        tree[basename].dup
-      else
-        tree[dirname] ||= {}
-        tree[dirname][basename] ||= {}
-        tree[dirname][basename].dup
+      dirname = '.' if [nil, '', '.'].include? dirname
+      tree[dirname] ||= {}
+      tree[dirname][basename] ||= {}
+      tree[dirname][basename].dup
       end
     end
 
     def dir_entries(rel_path)
-      subtree =
-        if [nil, '', '.'].include? rel_path.to_s
-          tree
-        else
-          tree[rel_path.to_s] ||= _auto_hash
-          tree[rel_path.to_s]
-        end
-
-      result = {}
-      subtree.each do |key, values|
-        # only get data for file entries
-        result[key] = values.key?(:mtime) ? values : {}
-      end
-      result
+      rel_path = rel_path.to_s
+      rel_path = '.' if [nil, '', '.'].include? rel_path
+      [tree.key?(rel_path), tree[rel_path] ||= _auto_hash]
     end
 
     def build
@@ -73,28 +54,34 @@ module Listen
       Hash.new { |h, k| h[k] = Hash.new }
     end
 
+    # TODO: refactor/refactor out
+    def add_dir(dir, rel_path)
+      rel_path = '.' if [nil, '', '.'].include? rel_path
+      dirname, basename = Pathname(rel_path).split.map(&:to_s)
+      basename = '.' if [nil, '', '.'].include? basename
+      root = (@paths[dir.to_s] ||= {})
+      dirname = '.' if [nil, '', '.'].include?(dirname)
+      entries = (root[dirname] || {})
+      entries.merge!(basename => {}) if basename != '.'
+      root[dirname] = entries
+    end
+
     def tree
       @tree
     end
 
     def _fast_update_file(dirname, basename, data)
-      if [nil, '', '.'].include? dirname
-        tree[basename] = (tree[basename] || {}).merge(data)
-      else
-        tree[dirname] ||= {}
-        tree[dirname][basename] = (tree[dirname][basename] || {}).merge(data)
-      end
+      dirname = '.' if [nil, '', '.'].include? dirname
+      tree[dirname] ||= {}
+      tree[dirname][basename] = (tree[dirname][basename] || {}).merge(data)
     end
 
     def _fast_unset_path(dirname, basename)
       # this may need to be reworked to properly remove
       # entries from a tree, without adding non-existing dirs to the record
-      if [nil, '', '.'].include? dirname
-        return unless tree.key?(basename)
-        tree.delete(basename)
-      else
-        return unless tree.key?(dirname)
-        tree[dirname].delete(basename)
+      dirname = '.' if [nil, '', '.'].include? dirname
+      return unless tree.key?(dirname)
+      tree[dirname].delete(basename)
       end
     end
 
