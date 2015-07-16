@@ -22,7 +22,7 @@ module Listen
 
     def unset_path(rel_path)
       dirname, basename = Pathname(rel_path).split.map(&:to_s)
-      _fast_unset_path(dirname, basename)
+      _fast_unset_path(rel_path, dirname, basename)
     end
 
     def file_data(rel_path)
@@ -68,11 +68,12 @@ module Listen
       tree[dirname][basename] = (tree[dirname][basename] || {}).merge(data)
     end
 
-    def _fast_unset_path(dirname, basename)
+    def _fast_unset_path(rel_path, dirname, basename)
       # this may need to be reworked to properly remove
       # entries from a tree, without adding non-existing dirs to the record
       return unless tree.key?(dirname)
-      tree[dirname].delete(basename)
+      tree[dirname].delete basename
+      tree.delete rel_path
     end
 
     def _fast_build_dir(remaining)
@@ -91,7 +92,7 @@ module Listen
     def _fast_try_file(entry)
       _fast_update_file(entry.relative, entry.name, entry.meta)
     rescue SystemCallError
-      _fast_unset_path(entry.relative, entry.name)
+      _fast_unset_path(entry.record_dir_key, entry.relative, entry.name)
     end
   end
 end

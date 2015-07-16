@@ -152,6 +152,19 @@ RSpec.describe Listen::Record do
         end
       end
     end
+
+    context 'with directory path' do
+      before do
+        record.update_dir('path')
+        record.update_file('path/file.rb', mtime: 1.1)
+      end
+
+      it 'unsets path and dir entries' do
+        record.unset_path('path/file.rb')
+        record.unset_path('path')
+        expect(record_tree(record)).to eq('.' => {})
+      end
+    end
   end
 
   describe '#file_data' do
