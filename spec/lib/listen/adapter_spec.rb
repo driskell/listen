@@ -18,11 +18,6 @@ RSpec.describe Listen::Adapter do
 
       it { is_expected.to be Listen::Adapter::Darwin }
 
-      context "when TCP is requested" do
-        let(:options) { { force_tcp: true } }
-        it { is_expected.to be Listen::Adapter::TCP }
-      end
-
       context "when polling is forced" do
         let(:options) { { force_polling: true } }
         it { is_expected.to be Listen::Adapter::Polling }
@@ -33,11 +28,6 @@ RSpec.describe Listen::Adapter do
       before { allow(Listen::Adapter::BSD).to receive(:usable?) { true } }
 
       it { is_expected.to be Listen::Adapter::BSD }
-
-      context "when TCP is requested" do
-        let(:options) { { force_tcp: true } }
-        it { is_expected.to be Listen::Adapter::TCP }
-      end
 
       context "when polling is forced" do
         let(:options) { { force_polling: true } }
@@ -62,11 +52,6 @@ RSpec.describe Listen::Adapter do
         it { is_expected.to be Listen::Adapter::Linux }
       end
 
-      context "when TCP is requested" do
-        let(:options) { { force_tcp: true } }
-        it { is_expected.to be Listen::Adapter::TCP }
-      end
-
       context "when polling is forced" do
         let(:options) { { force_polling: true } }
         it { is_expected.to be Listen::Adapter::Polling }
@@ -79,11 +64,6 @@ RSpec.describe Listen::Adapter do
       end
 
       it { is_expected.to be Listen::Adapter::Windows }
-
-      context "when TCP is requested" do
-        let(:options) { { force_tcp: true } }
-        it { is_expected.to be Listen::Adapter::TCP }
-      end
 
       context "when polling is forced" do
         let(:options) { { force_polling: true } }
