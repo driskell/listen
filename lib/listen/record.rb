@@ -1,5 +1,4 @@
 require 'listen/record/entry'
-require 'listen/record/symlink_detector'
 
 module Listen
   class Record
