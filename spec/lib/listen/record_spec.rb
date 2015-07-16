@@ -2,6 +2,10 @@ RSpec.describe Listen::Record do
   let(:dir) { instance_double(Pathname, to_s: '/dir') }
   let(:record) { Listen::Record.new(dir) }
 
+  before do
+    allow(::File).to receive(:symlink?).with('/dir').and_return(false)
+  end
+
   def dir_entries_for(hash)
     hash.each do |dir, entries|
       allow(::Dir).to receive(:entries).with(dir) { entries }
@@ -17,7 +21,7 @@ RSpec.describe Listen::Record do
 
   def file(path)
     allow(::Dir).to receive(:entries).with(path).and_raise(Errno::ENOTDIR)
-    path
+    realpath(path)
   end
 
   def lstat(path, stat = nil)
@@ -28,18 +32,14 @@ RSpec.describe Listen::Record do
 
   def realpath(path)
     allow(::File).to receive(:realpath).with(path).and_return(path)
+    allow(::File).to receive(:symlink?).with(path).and_return(false)
     path
   end
 
-  def symlink(hash_or_dir)
-    if String === hash_or_dir
-      allow(::File).to receive(:realpath).with(hash_or_dir).
-        and_return(hash_or_dir)
-    else
-      hash_or_dir.each do |dir, real_path|
-        allow(::File).to receive(:realpath).with(dir).and_return(real_path)
-      end
-    end
+  def symlink(src, dst)
+    allow(::File).to receive(:realpath).with(src).and_return(dst)
+    allow(::File).to receive(:symlink?).with(src).and_return(true)
+    src
   end
 
   def record_tree(record)
@@ -131,7 +131,10 @@ RSpec.describe Listen::Record do
 
     context 'within subdir' do
       context 'when path is present' do
-        before { record.update_file('path/file.rb', mtime: 1.1) }
+        before do
+          record.update_dir('path')
+          record.update_file('path/file.rb', mtime: 1.1)
+        end
 
         it 'unsets path' do
           record.unset_path('path/file.rb')
@@ -191,12 +194,16 @@ RSpec.describe Listen::Record do
       subject { record.dir_entries('.') }
 
       context 'with no entries' do
-        it { should eq([true, {}]) }
+        it 'returns that it exists and is an empty directory' do
+          should eq([true, {}])
+        end
       end
 
       context 'with file.rb in record' do
         before { record.update_file('file.rb', mtime: 1.1) }
-        it { should eq([true, 'file.rb' => { mtime: 1.1 }]) }
+        it 'returns that it exists and contains a file' do
+          should eq([true, 'file.rb' => { mtime: 1.1 }])
+        end
       end
 
       context 'with subdir/file.rb in record' do
@@ -204,7 +211,10 @@ RSpec.describe Listen::Record do
           record.update_dir('subdir')
           record.update_file('subdir/file.rb', mtime: 1.1)
         end
-        it { should eq([true, 'subdir' => {}]) }
+
+        it 'returns that it exists and contains a directory' do
+          should eq([true, 'subdir' => {}])
+        end
       end
     end
 
@@ -212,7 +222,9 @@ RSpec.describe Listen::Record do
       subject { record.dir_entries('path') }
 
       context 'with no entries' do
-        it { should eq([false, {}]) }
+        it 'returns that it does not exist' do
+          should eq([false, {}])
+        end
       end
 
       context 'with path/file.rb already in record' do
@@ -220,7 +232,10 @@ RSpec.describe Listen::Record do
           record.update_dir('path')
           record.update_file('path/file.rb', mtime: 1.1)
         end
-        it { should eq([true, 'file.rb' => { mtime: 1.1 }]) }
+
+        it 'returns that it exists and contains a file' do
+          should eq([true, 'file.rb' => { mtime: 1.1 }])
+        end
       end
     end
   end
@@ -266,12 +281,12 @@ RSpec.describe Listen::Record do
 
       it 'builds record' do
         record.build
-        expect(record_tree(record)).
-          to eq(
-            '.' => {
-              'foo' => { mtime: 1.0, mode: 0644 },
-              'bar' => { mtime: 2.3, mode: 0755 }
-            })
+        expect(record_tree(record)).to eq(
+          '.' => {
+            'foo' => { mtime: 1.0, mode: 0644 },
+            'bar' => { mtime: 2.3, mode: 0755 }
+          }
+        )
       end
     end
 
@@ -286,12 +301,11 @@ RSpec.describe Listen::Record do
 
       it 'builds record'  do
         record.build
-        expect(record_tree(record)).
-          to eq(
-            '.' => {'dir1' => {}, 'dir2' => {}},
-            'dir1' => {'foo' => {}},
-            'dir1/foo' => { 'bar' => { mtime: 2.3, mode: 0755 } },
-            'dir2' => {},
+        expect(record_tree(record)).to eq(
+          '.' => { 'dir1' => {}, 'dir2' => {} },
+          'dir1' => { 'foo' => {} },
+          'dir1/foo' => { 'bar' => { mtime: 2.3, mode: 0755 } },
+          'dir2' => {},
         )
       end
     end
@@ -310,73 +324,52 @@ RSpec.describe Listen::Record do
 
       it 'builds record'  do
         record.build
-        expect(record_tree(record)).
-          to eq(
-            '.' => {'dir1' => {}, 'dir2' => {}},
-            'dir1' => {'foo' => {}},
-            'dir1/foo' => {'bar' => {}, 'baz' => {}},
-            'dir1/foo/bar' => {},
-            'dir1/foo/baz' => {},
-            'dir2' => {},
+        expect(record_tree(record)).to eq(
+          '.' => { 'dir1' => {}, 'dir2' => {} },
+          'dir1' => { 'foo' => {} },
+          'dir1/foo' => { 'bar' => {}, 'baz' => {} },
+          'dir1/foo/bar' => {},
+          'dir1/foo/baz' => {},
+          'dir2' => {},
         )
       end
     end
 
     context 'with subdir containing symlink to parent' do
-      subject { record.paths }
       before do
         real_directory('/dir' => %w(dir1 dir2))
         real_directory('/dir/dir1' => %w(foo))
-        dir_entries_for('/dir/dir1/foo' => %w(dir1))
-        symlink('/dir/dir1/foo' => '/dir/dir1')
-
+        dir_entries_for('/dir/dir1/foo' => %w(foo))
+        lstat(symlink('/dir/dir1/foo', '/dir/dir1'))
         real_directory('/dir/dir2' => [])
       end
 
-      it 'shows a warning' do
-        expect(STDERR).to receive(:puts).
-          with(/directory is already being watched/)
-
+      it 'treats the symlink as a regular file' do
         record.build
-        # expect { record.build }.
-        # to raise_error(RuntimeError, /Failed due to looped symlinks/)
-      end
-    end
-
-    context 'with a normal symlinked directory to another' do
-      subject { record.paths }
-
-      before do
-        real_directory('/dir' => %w(dir1))
-        real_directory('/dir/dir1' => %w(foo))
-
-        symlink('/dir/dir1/foo' => '/dir/dir2')
-        dir_entries_for('/dir/dir1/foo' => %w(bar))
-        lstat(realpath(file('/dir/dir1/foo/bar')))
-
-        real_directory('/dir/dir2' => %w(bar))
-        lstat(file('/dir/dir2/bar'))
-      end
-
-      it 'shows message' do
-        expect(STDERR).to_not receive(:puts)
-        record.build
+        expect(record_tree(record)).to eq(
+          '.' => { 'dir1' => {}, 'dir2' => {} },
+          'dir1' => { 'foo' => { mtime: 2.3, mode: 0755 } },
+          'dir2' => {},
+        )
       end
     end
 
     context 'with subdir containing symlinked file' do
-      subject { record.paths }
       before do
         real_directory('/dir' => %w(dir1 dir2))
         real_directory('/dir/dir1' => %w(foo))
         lstat(file('/dir/dir1/foo'))
-        real_directory('/dir/dir2' => [])
+        real_directory('/dir/dir2' => %w(foo))
+        lstat(symlink('/dir/dir2/foo', '/dir/dir1/foo'))
       end
 
-      it 'shows a warning' do
-        expect(STDERR).to_not receive(:puts)
-
+      it 'treats the symlink as a regular file' do
         record.build
+        expect(record_tree(record)).to eq(
+          '.' => { 'dir1' => {}, 'dir2' => {} },
+          'dir1' => { 'foo' => { mtime: 2.3, mode: 0755 } },
+          'dir2' => { 'foo' => { mtime: 2.3, mode: 0755 } },
+        )
       end
     end
   end

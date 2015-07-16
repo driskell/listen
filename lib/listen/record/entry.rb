@@ -9,7 +9,12 @@ module Listen
         @root, @relative, @name = root, relative, name
       end
 
-      attr_reader :root, :relative, :name
+      attr_reader :root, :name
+
+      def relative
+        return '.' if @relative.nil?
+        @relative
+      end
 
       def children
         child_relative = _join

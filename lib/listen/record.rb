@@ -45,10 +45,9 @@ module Listen
       # TODO: test with a file name given
       # TODO: test other permissions
       # TODO: test with mixed encoding
-      symlink_detector = SymlinkDetector.new
       remaining = Queue.new
-      remaining << Entry.new(root, '.', '.')
-      _fast_build_dir(remaining, symlink_detector) until remaining.empty?
+      remaining << Entry.new(root, nil, nil)
+      _fast_build_dir(remaining) until remaining.empty?
     end
 
     private
@@ -79,15 +78,16 @@ module Listen
       tree[dirname].delete(basename)
     end
 
-    def _fast_build_dir(remaining, symlink_detector)
+    def _fast_build_dir(remaining)
       entry = remaining.pop
-      children = entry.children # NOTE: children() implicitly tests if dir
-      symlink_detector.verify_unwatched!(entry)
+      fail Errno::ENOTDIR if ::File.symlink?(entry.sys_path)
+      children = entry.children
       children.each { |child| remaining << child }
-      _fast_update_dir(entry.record_as_key, entry.relative, entry.name)
+      return if entry.name.nil?
+      _fast_update_dir(entry.record_dir_key, entry.relative, entry.name)
     rescue Errno::ENOTDIR
       _fast_try_file(entry)
-    rescue SystemCallError, SymlinkDetector::Error
+    rescue SystemCallError
       _fast_unset_path(entry.relative, entry.name)
     end
 
