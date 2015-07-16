@@ -3,10 +3,8 @@ require 'listen/record/symlink_detector'
 
 module Listen
   class Record
-    # TODO: one Record object per watched directory?
-    # TODO: deprecate
-
     attr_reader :root
+
     def initialize(directory)
       @tree = _auto_hash
       @tree['.'] = _auto_hash
