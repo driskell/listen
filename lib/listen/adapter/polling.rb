@@ -30,7 +30,7 @@ module Listen
       end
 
       def _process_event(dir, _)
-        _queue_change(:dir, dir, '.', recursive: true)
+        _queue_change(:tree, dir, '.')
       end
     end
   end

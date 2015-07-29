@@ -34,7 +34,8 @@ module Listen
 
     def dir_entries(rel_path)
       rel_path = rel_path.to_s
-      [tree.key?(rel_path), tree[rel_path] ||= _auto_hash]
+      # Do not store anything for the directory when querying
+      tree.has_key?(rel_path) ? tree[rel_path] : {}
     end
 
     def build
@@ -60,12 +61,16 @@ module Listen
     def _fast_update_dir(record_as_key, dirname, basename)
       tree[record_as_key] ||= {}
       tree[dirname] ||= {}
+      exists = tree[dirname].has_key?(basename)
       tree[dirname].merge!(basename => {}) if basename != '.'
+      exists
     end
 
     def _fast_update_file(dirname, basename, data)
       tree[dirname] ||= {}
+      exists = tree[dirname].has_key?(basename)
       tree[dirname][basename] = (tree[dirname][basename] || {}).merge(data)
+      exists
     end
 
     def _fast_unset_path(rel_path, dirname, basename)

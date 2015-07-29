@@ -50,10 +50,12 @@ module Listen
         options = cookie ? { cookie: cookie } : {}
         config.queue(type, change, watched_dir, rel_path, options)
       else
-        if type == :dir
-          # NOTE: POSSIBLE RECURSION
-          # TODO: fix - use a queue instead
-          Directory.scan(self, rel_path, options)
+        if type == :tree
+          # Invalid the entire directory tree
+          Directory.scan(self, rel_path, *options, recurse: true)
+        elsif type == :dir
+          # Invalid directory contents, but do not recurse
+          Directory.scan(self, rel_path, *options, recurse: false)
         else
           change = File.change(record, rel_path)
           return if !change || options[:silence]

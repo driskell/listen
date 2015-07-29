@@ -3,32 +3,12 @@ require 'set'
 module Listen
   # TODO: refactor (turn it into a normal object, cache the stat, etc)
   class Directory
-    def self.scan(snapshot, rel_path, options)
+    def self.scan(snapshot, rel_path, options, recursive)
       record = snapshot.record
+
+      _, previous = record.dir_entries(rel_path)
+
       dir = Pathname.new(record.root)
-      existed, previous = record.dir_entries(dir, rel_path)
-
-      if options[:recursive]
-        # Recursion is forced (not automatic), keep recursing
-        opts = options
-      elsif !options[:is_recursing]
-        # We're top level - automatically recurse into subfolder to check if
-        # they are new
-        opts = options.dup
-        opts[:is_recursing] = true
-      elsif existed
-        # We're one level into automatic recursion and the subfolder is known
-        # and is not new, stop recursing
-        _log(:debug) do
-          format('Directory unchanged: %s(%s)', rel_path, options.inspect)
-        end
-        return
-      else
-        # New subfolder, keep recursing
-        opts = options
-      end
-
-      # TODO: use children(with_directory: false)
       path = dir + rel_path
       current = Set.new(path.children)
 
@@ -38,26 +18,45 @@ module Listen
                rel_path, options.inspect, previous.inspect, current.inspect)
       end
 
+      record.update_dir(rel_path)
+
       current.each do |full_path|
-        type = detect_type(full_path)
+        # Find old type so we can ensure we invalidate directory contents
+        # if we were previously a file, and vice versa
+        if previous.key?(full_path.basename)
+          old = previous.delete(full_path.basename)
+          old_type = old.key?(:mtime) ? :dir : :file
+        else
+          old_type = nil
+        end
+
         item_rel_path = full_path.relative_path_from(dir).to_s
-        _change(snapshot, type, item_rel_path, opts)
+        if detect_type(full_path) == :dir
+          if old_type == :file
+            snapshot.invalidate(:file, item_rel_path, options)
+          end
+
+          # Only invalidate subdirectories if we're recursing or it is new
+          if recursive || old_type.nil?
+            snapshot.invalidate(:tree, item_rel_path, options)
+          end
+        else
+          if old_type == :dir
+            snapshot.invalidate(:tree, item_rel_path, options)
+          end
+
+          snapshot.invalidate(:file, item_rel_path, options)
+        end
       end
 
-      # TODO: this is not tested properly
-      previous = previous.reject { |entry, _| current.include? path + entry }
-
-      _async_changes(snapshot, Pathname.new(rel_path), previous, opts)
-
+      process_previous(snapshot, Pathname.new(rel_path), previous, options)
     rescue Errno::ENOENT, Errno::EHOSTDOWN
       record.unset_path(rel_path)
-      _async_changes(snapshot, Pathname.new(rel_path), previous, opts)
-
+      process_previous(snapshot, Pathname.new(rel_path), previous, options)
     rescue Errno::ENOTDIR
-      # TODO: path not tested
       record.unset_path(rel_path)
-      _async_changes(snapshot, path, previous, opts)
-      _change(snapshot, :file, rel_path, opts)
+      process_previous(snapshot, path, previous, options)
+      snapshot.invalidate(:file, rel_path, options)
     rescue
       Listen::Logger.warn do
         format('scan DIED: %s:%s', $ERROR_INFO, $ERROR_POSITION * "\n")
@@ -65,32 +64,18 @@ module Listen
       raise
     end
 
-    def self._async_changes(snapshot, path, previous, options)
-      fail "Not a Pathname: #{path.inspect}" unless path.respond_to?(:children)
-      # Always recurse removed entries
-      opts = options.dup
-      opts[:recursive] = true
-
+    def self.process_previous(snapshot, path, previous, options)
       previous.each do |entry, data|
-        # TODO: this is a hack with insufficient testing
-        type = data.key?(:mtime) ? :file : :dir
+        type = data.key?(:mtime) ? :file : :tree
         rel_path_s = (path + entry).to_s
-        _change(snapshot, type, rel_path_s, opts)
+        snapshot.invalidate(type, rel_path_s, options)
       end
     end
 
-    def self._change(snapshot, type, path, options)
-      return snapshot.invalidate(type, path, options) if type == :dir
-
-      snapshot.invalidate(type, path, opts)
-    end
-
     def self.detect_type(full_path)
-      # TODO: should probably check record first
       stat = ::File.lstat(full_path.to_s)
       stat.directory? ? :dir : :file
     rescue Errno::ENOENT
-      # TODO: ok, it should really check the record here
       # report as dir for scanning
       :dir
     end

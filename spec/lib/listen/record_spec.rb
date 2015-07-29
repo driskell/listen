@@ -49,14 +49,14 @@ RSpec.describe Listen::Record do
   describe '#update_file' do
     context 'with path in watched dir' do
       it 'sets path by spliting dirname and basename' do
-        record.update_file('file.rb', mtime: 1.1)
+        expect(record.update_file('file.rb', mtime: 1.1)).to eq false
         entries = record_tree(record)['.']
         expect(entries).to eq('file.rb' => { mtime: 1.1 })
       end
 
       it 'sets path and keeps old data not overwritten' do
-        record.update_file('file.rb', foo: 1, bar: 2)
-        record.update_file('file.rb', foo: 3)
+        expect(record.update_file('file.rb', foo: 1, bar: 2)).to eq false
+        expect(record.update_file('file.rb', foo: 3)).to eq true
         entries = record_tree(record)['.']
         expect(entries['file.rb']).to eq(foo: 3, bar: 2)
       end
@@ -66,14 +66,14 @@ RSpec.describe Listen::Record do
       before { record.update_dir('path') }
 
       it 'sets path by spliting dirname and basename' do
-        record.update_file('path/file.rb', mtime: 1.1)
+        expect(record.update_file('path/file.rb', mtime: 1.1)).to eq false
         entries = record_tree(record)['path']
         expect(entries).to eq('file.rb' => { mtime: 1.1 })
       end
 
       it 'sets path and keeps old data not overwritten' do
-        record.update_file('path/file.rb', foo: 1, bar: 2)
-        record.update_file('path/file.rb', foo: 3)
+        expect(record.update_file('path/file.rb', foo: 1, bar: 2)).to eq false
+        expect(record.update_file('path/file.rb', foo: 3)).to eq true
         entries = record_tree(record)['path']
         expect(entries['file.rb']).to eq(foo: 3, bar: 2)
       end
@@ -82,8 +82,8 @@ RSpec.describe Listen::Record do
 
   describe '#update_dir' do
     it 'correctly sets new directory data' do
-      record.update_dir('path')
-      record.update_dir('path/subdir')
+      expect(record.update_dir('path')).to eq false
+      expect(record.update_dir('path/subdir')).to eq false
       expect(record_tree(record)).to eq(
         '.' => { 'path' => {} },
         'path' => { 'subdir' => {} },
@@ -93,11 +93,11 @@ RSpec.describe Listen::Record do
 
     it 'sets path and keeps old data not overwritten' do
       record.update_dir('path')
-      record.update_dir('path/subdir')
+      expect(record.update_dir('path/subdir')).to eq false
       record.update_file('path/subdir/file.rb', mtime: 1.1)
-      record.update_dir('path/subdir')
+      expect(record.update_dir('path/subdir')).to eq true
       record.update_file('path/subdir/file2.rb', mtime: 1.2)
-      record.update_dir('path/subdir')
+      expect(record.update_dir('path/subdir')).to eq true
 
       expect(record_tree(record)).to eq(
         '.' => { 'path' => {} },
@@ -207,15 +207,15 @@ RSpec.describe Listen::Record do
       subject { record.dir_entries('.') }
 
       context 'with no entries' do
-        it 'returns that it exists and is an empty directory' do
-          should eq([true, {}])
+        it 'returns that it is an empty directory' do
+          should eq({})
         end
       end
 
       context 'with file.rb in record' do
         before { record.update_file('file.rb', mtime: 1.1) }
-        it 'returns that it exists and contains a file' do
-          should eq([true, 'file.rb' => { mtime: 1.1 }])
+        it 'returns that it contains a file' do
+          should eq('file.rb' => { mtime: 1.1 })
         end
       end
 
@@ -225,8 +225,8 @@ RSpec.describe Listen::Record do
           record.update_file('subdir/file.rb', mtime: 1.1)
         end
 
-        it 'returns that it exists and contains a directory' do
-          should eq([true, 'subdir' => {}])
+        it 'returns that it contains a directory' do
+          should eq('subdir' => {})
         end
       end
     end
@@ -235,8 +235,11 @@ RSpec.describe Listen::Record do
       subject { record.dir_entries('path') }
 
       context 'with no entries' do
-        it 'returns that it does not exist' do
-          should eq([false, {}])
+        it 'returns that it is an empty directory but does not persist ' \
+          'anything' do
+          should eq({})
+          expect(record.instance_variable_get(:@tree).has_key?('path')).
+            to be false
         end
       end
 
@@ -246,8 +249,8 @@ RSpec.describe Listen::Record do
           record.update_file('path/file.rb', mtime: 1.1)
         end
 
-        it 'returns that it exists and contains a file' do
-          should eq([true, 'file.rb' => { mtime: 1.1 }])
+        it 'returns that it contains a file' do
+          should eq('file.rb' => { mtime: 1.1 })
         end
       end
     end

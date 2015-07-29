@@ -1,43 +1,66 @@
 include Listen
 
 RSpec.describe Directory do
-  def fake_file_stat(name, options = {})
-    defaults = { directory?: false }
-    instance_double(::File::Stat, name, defaults.merge(options))
+  def fake_file_stat(name)
+    stat = instance_double(::File::Stat, directory?: false)
+    allow(::File).to receive(:lstat).with(name).and_return(stat)
   end
 
-  def fake_dir_stat(name, options = {})
-    defaults = { directory?: true }
-    instance_double(::File::Stat, name, defaults.merge(options))
+  def fake_dir_stat(name)
+    stat = instance_double(::File::Stat, directory?: true)
+    allow(::File).to receive(:lstat).with(name).and_return(stat)
   end
 
-  let(:dir) { double(:dir) }
-  let(:file) { fake_path('file.rb') }
-  let(:file2) { fake_path('file2.rb') }
-  let(:subdir) { fake_path('subdir') }
+  def file_system(s = nil)
+    @file_system = s unless s.nil?
+    @file_system ||= {}
+  end
+
+  def dir_entries(s = nil)
+    @dir_entries = [true, s] unless s.nil?
+    @dir_entries ||= [true, {}]
+  end
+
+  def expect_file_update(path)
+    expect(record).to receive(:update_file).with(path).
+      and_return(dir_entries[1].key?(path))
+  end
+
+  def expect_dir_update(path)
+    expect(record).to receive(:update_dir).with(path).
+      and_return(dir_entries[1].key?(path))
+  end
 
   let(:record) do
-    instance_double(
+    r = instance_double(
       Record,
-      root: 'some_dir',
-      dir_entries: record_entries,
-      add_dir: true,
-      unset_path: true)
+      root: '/dir',
+      unset_path: nil
+    )
+    allow(r).to receive(:dir_entries) do
+      dir_entries
+    end
+    r
   end
 
   let(:snapshot) { instance_double(Change, record: record, invalidate: nil) }
 
+  let(:options) { { option: 'value' } }
+
   before do
-    allow(dir).to receive(:+).with('.') { dir }
-    allow(dir).to receive(:+).with('file.rb') { file }
-    allow(dir).to receive(:+).with('subdir') { subdir }
-
-    allow(file).to receive(:relative_path_from).with(dir) { 'file.rb' }
-    allow(file2).to receive(:relative_path_from).with(dir) { 'file2.rb' }
-    allow(subdir).to receive(:relative_path_from).with(dir) { 'subdir' }
-
-    allow(Pathname).to receive(:new).with('some_dir').and_return(dir)
-    allow(Pathname).to receive(:new).with('.').and_return(dir)
+    root = Pathname.new('/dir')
+    orig_new = Pathname.method(:new)
+    allow(Pathname).to receive(:new) do |path|
+      o = orig_new.call(path)
+      allow(o).to receive(:children) do
+        entries = file_system[o.relative_path_from(root).to_s]
+        fail Errno::ENOENT if entries.nil?
+        (entries || []).map do |child|
+          o + child
+        end
+      end
+      o
+    end
 
     allow(::File).to receive(:lstat) do |*args|
       fail "Not stubbed: File.lstat(#{args.map(&:inspect) * ','})"
@@ -45,214 +68,153 @@ RSpec.describe Directory do
   end
 
   context '#scan with recursive off' do
-    let(:options) { { recursive: false } }
+    context 'with empty record' do
+      it 'invalidates added directory trees' do
+        file_system('.' => ['subdir'])
+        fake_dir_stat '/dir/subdir'
 
-    context 'with file & subdir in record' do
-      let(:record_entries) do
-        { 'file.rb' => { mtime: 1.1 }, 'subdir' => {} }.freeze
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).with(:tree, 'subdir', options)
+        described_class.scan(snapshot, '.', options, false)
       end
 
-      context 'with empty dir' do
-        before { allow(dir).to receive(:children) { [] } }
+      it 'invalidates added files' do
+        file_system('.' => ['file.rb'])
+        fake_file_stat '/dir/file.rb'
 
-        it 'sets record dir path' do
-          expect(record).to receive(:add_dir).with('.')
-          described_class.scan(snapshot, '.', options)
-        end
-
-        it "snapshots changes for file path and dir that doesn't exist" do
-          expect(snapshot).to receive(:invalidate).with(:file, 'file.rb', {})
-
-          expect(snapshot).to receive(:invalidate).
-            with(:dir, 'subdir', recursive: false)
-
-          described_class.scan(snapshot, '.', options)
-        end
-      end
-
-      context 'when subdir is removed' do
-        before  do
-          allow(dir).to receive(:children) { [file] }
-
-          allow(::File).to receive(:lstat).with('file.rb').
-            and_return(fake_file_stat('file.rb'))
-        end
-
-        it 'notices subdir does not exist' do
-          expect(snapshot).to receive(:invalidate).
-            with(:dir, 'subdir', recursive: false)
-
-          described_class.scan(snapshot, '.', options)
-        end
-      end
-
-      context 'when file.rb removed' do
-        before do
-          allow(dir).to receive(:children) { [subdir] }
-
-          allow(::File).to receive(:lstat).with('subdir').
-            and_return(fake_dir_stat('subdir'))
-        end
-
-        it 'notices file was removed' do
-          expect(snapshot).to receive(:invalidate).with(:file, 'file.rb', {})
-          described_class.scan(snapshot, '.', options)
-        end
-      end
-
-      context 'when file2.rb is added' do
-        before do
-          allow(dir).to receive(:children) { [file, file2, subdir] }
-
-          allow(::File).to receive(:lstat).with('file.rb').
-            and_return(fake_file_stat('file.rb'))
-
-          allow(::File).to receive(:lstat).with('file2.rb').
-            and_return(fake_file_stat('file2.rb'))
-
-          allow(::File).to receive(:lstat).with('subdir').
-            and_return(fake_dir_stat('subdir'))
-        end
-
-        it 'notices file removed and file2 changed' do
-          expect(snapshot).to receive(:invalidate).with(:file, 'file2.rb', {})
-          described_class.scan(snapshot, '.', options)
-        end
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).with(:file, 'file.rb', options)
+        described_class.scan(snapshot, '.', options, false)
       end
     end
 
-    context 'with empty record' do
-      let(:record_entries) { {} }
+    context 'with populated record' do
+      it 'invalidates added directory trees' do
+        dir_entries('dir1' => {}, 'dir2' => {})
+        file_system('.' => ['dir1', 'dir2', 'dir3'])
+        fake_dir_stat '/dir/dir1'
+        fake_dir_stat '/dir/dir2'
+        fake_dir_stat '/dir/dir3'
 
-      context 'with non-existing dir path' do
-        before { allow(dir).to receive(:children) { fail Errno::ENOENT } }
-
-        it 'reports no changes' do
-          expect(snapshot).to_not receive(:invalidate)
-          described_class.scan(snapshot, '.', options)
-        end
-
-        it 'unsets record dir path' do
-          expect(record).to receive(:unset_path).with('.')
-          described_class.scan(snapshot, '.', options)
-        end
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).with(:tree, 'dir3', options)
+        described_class.scan(snapshot, '.', options, false)
       end
 
-      context 'when network share is disconnected' do
-        before { allow(dir).to receive(:children) { fail Errno::EHOSTDOWN } }
+      it 'invalidates removed directory trees' do
+        dir_entries('dir1' => {}, 'dir2' => {})
+        file_system('.' => ['dir2'])
+        fake_dir_stat '/dir/dir2'
 
-        it 'reports no changes' do
-          expect(snapshot).to_not receive(:invalidate)
-          described_class.scan(snapshot, '.', options)
-        end
-
-        it 'unsets record dir path' do
-          expect(record).to receive(:unset_path).with('.')
-          described_class.scan(snapshot, '.', options)
-        end
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).with(:tree, 'dir1', options)
+        described_class.scan(snapshot, '.', options, false)
       end
 
-      context 'with file.rb in dir' do
-        before do
-          allow(dir).to receive(:children) { [file] }
+      it 'invalidates both added and removed trees' do
+        dir_entries('dir1' => {}, 'dir2' => {})
+        file_system('.' => ['dir2', 'dir3'])
+        fake_dir_stat '/dir/dir2'
+        fake_dir_stat '/dir/dir3'
 
-          allow(::File).to receive(:lstat).with('file.rb').
-            and_return(fake_file_stat('file.rb'))
-        end
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).with(:tree, 'dir1', options)
+        expect(snapshot).to receive(:invalidate).with(:tree, 'dir3', options)
+        described_class.scan(snapshot, '.', options, false)
+      end
 
-        it 'snapshots changes for file & file2 paths' do
-          expect(snapshot).to receive(:invalidate).
-            with(:file, 'file.rb', {})
+      it 'invalidates all files including added files' do
+        dir_entries('file2.rb' => { mtime: 1.1 })
+        file_system('.' => ['file1.rb', 'file2.rb'])
+        fake_file_stat '/dir/file1.rb'
+        fake_file_stat '/dir/file2.rb'
 
-          expect(snapshot).to_not receive(:invalidate).
-            with(:file, 'file2.rb', {})
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).with(
+          :file, 'file1.rb', options)
+        expect(snapshot).to receive(:invalidate).with(
+          :file, 'file2.rb', options)
+        described_class.scan(snapshot, '.', options, false)
+      end
 
-          expect(snapshot).to_not receive(:invalidate).
-            with(:dir, 'subdir', recursive: false)
+      it 'invalidates all files including removed files' do
+        dir_entries('file1.rb' => { mtime: 1.1 }, 'file2.rb' => { mtime: 1.1 })
+        file_system('.' => ['file1.rb'])
+        fake_file_stat '/dir/file1.rb'
 
-          described_class.scan(snapshot, '.', options)
-        end
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).with(
+          :file, 'file1.rb', options)
+        expect(snapshot).to receive(:invalidate).with(
+          :file, 'file2.rb', options)
+        described_class.scan(snapshot, '.', options, false)
+      end
+
+      it 'invalidates all files including both added and removed files' do
+        dir_entries('file1.rb' => { mtime: 1.1 }, 'file2.rb' => { mtime: 1.1 })
+        file_system('.' => ['file1.rb', 'file3.rb'])
+        fake_file_stat '/dir/file1.rb'
+        fake_file_stat '/dir/file3.rb'
+
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).with(
+          :file, 'file1.rb', options)
+        expect(snapshot).to receive(:invalidate).with(
+          :file, 'file2.rb', options)
+        expect(snapshot).to receive(:invalidate).with(
+          :file, 'file3.rb', options)
+        described_class.scan(snapshot, '.', options, false)
+      end
+
+      it 'invalidates directory trees that are now files' do
+        dir_entries('ambiguous' => {})
+        file_system('.' => ['ambiguous'])
+        fake_file_stat '/dir/ambiguous'
+
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).ordered.with(
+          :file, 'ambiguous', options)
+        expect(snapshot).to receive(:invalidate).ordered.with(
+          :tree, 'ambiguous', options)
+        described_class.scan(snapshot, '.', options, false)
+      end
+
+      it 'invalidates files that are now directory trees' do
+        dir_entries('ambiguous' => { mtime: 1.1 })
+        file_system('.' => ['ambiguous'])
+        fake_dir_stat '/dir/ambiguous'
+
+        expect_dir_update('.')
+        expect(snapshot).to receive(:invalidate).ordered.with(
+          :tree, 'ambiguous', options)
+        expect(snapshot).to receive(:invalidate).ordered.with(
+          :file, 'ambiguous', options)
+        described_class.scan(snapshot, '.', options, false)
+      end
+
+      it 'invalidates all previous directory contents if the directory is ' \
+        'removed' do
+        dir_entries(
+          'file1.rb' => { mtime: 1.1 },
+          'dir1'     => {},
+          'file2.rb' => { mtime: 1.1 },
+        )
+        fake_file_stat '/dir/file1.rb'
+        fake_dir_stat '/dir/dir1'
+        fake_file_stat '/dir/file2.rb'
+
+        expect(snapshot).to receive(:invalidate).ordered.with(
+          :file, 'file1.rb', options)
+        expect(snapshot).to receive(:invalidate).ordered.with(
+          :tree, 'dir1', options)
+        expect(snapshot).to receive(:invalidate).ordered.with(
+          :file, 'file2.rb', options)
+        described_class.scan(snapshot, '.', options, false)
       end
     end
   end
 
   context '#scan with recursive on' do
-    let(:options) { { recursive: true } }
 
-    context 'with file.rb & subdir in record' do
-      let(:record_entries) do
-        { 'file.rb' => { mtime: 1.1 }, 'subdir' => {} }
-      end
-
-      context 'with empty dir' do
-        before do
-          allow(dir).to receive(:children) { [] }
-        end
-
-        it 'snapshots changes for file & subdir path' do
-          expect(snapshot).to receive(:invalidate).with(:file, 'file.rb', {})
-
-          expect(snapshot).to receive(:invalidate).
-            with(:dir, 'subdir', recursive: true)
-
-          described_class.scan(snapshot, '.', options)
-        end
-      end
-
-      context 'with subdir2 path present' do
-        let(:subdir2) { fake_path('subdir2', children: []) }
-
-        before do
-          allow(dir).to receive(:children) { [subdir2] }
-          allow(subdir2).to receive(:relative_path_from).with(dir) { 'subdir2' }
-
-          allow(::File).to receive(:lstat).with('subdir2').
-            and_return(fake_dir_stat('subdir2'))
-        end
-
-        it 'snapshots changes for file, file2 & subdir paths' do
-          expect(snapshot).to receive(:invalidate).with(:file, 'file.rb', {})
-
-          expect(snapshot).to receive(:invalidate).
-            with(:dir, 'subdir', recursive: true)
-
-          expect(snapshot).to receive(:invalidate).
-            with(:dir, 'subdir2', recursive: true)
-
-          described_class.scan(snapshot, '.', options)
-        end
-      end
-    end
-
-    context 'with empty record' do
-      let(:record_entries) { {} }
-
-      context 'with non-existing dir' do
-        before do
-          allow(dir).to receive(:children) { fail Errno::ENOENT }
-        end
-
-        it 'reports no changes' do
-          expect(snapshot).to_not receive(:invalidate)
-          described_class.scan(snapshot, '.', options)
-        end
-      end
-
-      context 'with subdir present in dir' do
-        before do
-          allow(dir).to receive(:children) { [subdir] }
-          allow(subdir).to receive(:children) { [] }
-          allow(::File).to receive(:lstat).with('subdir').
-            and_return(fake_dir_stat('subdir'))
-        end
-
-        it 'snapshots changes for subdir' do
-          expect(snapshot).to receive(:invalidate).
-            with(:dir, 'subdir', recursive: true)
-
-          described_class.scan(snapshot, '.', options)
-        end
-      end
-    end
   end
 end
