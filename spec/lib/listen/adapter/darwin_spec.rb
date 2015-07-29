@@ -111,7 +111,7 @@ RSpec.describe Adapter::Darwin do
       context 'with 1 directory' do
         let(:directories) { expectations.keys.map { |p| Pathname(p.to_s) } }
 
-        let(:expectations) { { '/foo/dir1': foo1 } }
+        let(:expectations) { { '/foo/dir1' => foo1 } }
 
         it 'configures directory' do
           expect(foo1).to have_received(:watch).with('/foo/dir1', latency: 0.1)
@@ -132,9 +132,9 @@ RSpec.describe Adapter::Darwin do
         let(:directories) { expectations.keys.map { |p| Pathname(p.to_s) } }
         let(:expectations) do
           {
-            '/foo/dir1': foo1,
-            '/foo/dir2': foo2,
-            '/foo/dir3': foo3
+            '/foo/dir1' => foo1,
+            '/foo/dir2' => foo2,
+            '/foo/dir3' => foo3
           }
         end
 
