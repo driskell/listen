@@ -1,3 +1,4 @@
+require 'thread'
 require 'listen/record/entry'
 
 module Listen
@@ -43,7 +44,7 @@ module Listen
       # TODO: test with a file name given
       # TODO: test other permissions
       # TODO: test with mixed encoding
-      remaining = Queue.new
+      remaining = ::Queue.new
       remaining << Entry.new(root, nil, nil)
       _fast_build_dir(remaining) until remaining.empty?
     end

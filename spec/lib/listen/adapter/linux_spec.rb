@@ -59,7 +59,6 @@ RSpec.describe Listen::Adapter::Linux do
       let(:adapter_options) { { events: [:recursive, :close_write] } }
 
       before do
-        allow(Kernel).to receive(:require).with('rb-inotify')
         fake_worker = double(:fake_worker)
         events = [:recursive, :close_write]
         allow(fake_worker).to receive(:watch).with('/foo/dir1', *events)
@@ -78,6 +77,7 @@ RSpec.describe Listen::Adapter::Linux do
         allow(Listen::Change).to receive(:new).with(config, record).
           and_return(snapshot)
 
+        allow(subject).to receive(:require).with('rb-inotify')
         subject.configure
       end
 
@@ -120,6 +120,33 @@ RSpec.describe Listen::Adapter::Linux do
       it 'recognizes moved_from as moved_from' do
         expect_change.call(:moved_from)
         event_callback.call([:moved_from])
+      end
+    end
+
+    describe '#stop' do
+      let(:fake_worker) { double(:fake_worker, close: true) }
+      let(:directories) { [dir1] }
+      let(:adapter_options) { { events: [:recursive, :close_write] } }
+
+      before do
+        events = [:recursive, :close_write]
+        allow(fake_worker).to receive(:watch).with('/foo/dir1', *events)
+
+        fake_notifier = double(:fake_notifier, new: fake_worker)
+        stub_const('INotify::Notifier', fake_notifier)
+
+        allow(config).to receive(:directories).and_return(directories)
+        allow(config).to receive(:adapter_options).and_return(adapter_options)
+        allow(config).to receive(:queue).and_return(queue)
+        allow(config).to receive(:silencer).and_return(silencer)
+
+        allow(subject).to receive(:require).with('rb-inotify')
+        subject.configure
+      end
+
+      it 'stops the worker' do
+        expect(fake_worker).to receive(:close)
+        subject.stop
       end
     end
   end
