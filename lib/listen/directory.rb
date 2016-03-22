@@ -6,7 +6,8 @@ module Listen
     def self.scan(snapshot, rel_path, options)
       record = snapshot.record
 
-      previous = record.dir_entries(rel_path)
+      # Grab previous entries - and dup so we don't tamper with original list
+      previous = record.dir_entries(rel_path).dup
 
       dir = Pathname.new(record.root)
       path = dir + rel_path
@@ -20,18 +21,20 @@ module Listen
 
       record.update_dir(rel_path)
 
-      current.each do |full_path|
+      current.each do |item_full_path|
+        item_basename = item_full_path.basename.to_s
+
         # Find old type so we can ensure we invalidate directory contents
         # if we were previously a file, and vice versa
-        if previous.key?(full_path.basename)
-          old = previous.delete(full_path.basename)
-          old_type = old.key?(:mtime) ? :dir : :file
+        if previous.key?(item_basename)
+          old = previous.delete(item_basename)
+          old_type = old.key?(:mtime) ? :file : :dir
         else
           old_type = nil
         end
 
-        item_rel_path = full_path.relative_path_from(dir).to_s
-        if detect_type(full_path) == :dir
+        item_rel_path = item_full_path.relative_path_from(dir).to_s
+        if detect_type(item_full_path) == :dir
           if old_type == :file
             snapshot.invalidate(:file, item_rel_path, options)
           end
