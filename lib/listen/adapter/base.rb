@@ -110,7 +110,7 @@ module Listen
 
       # TODO: allow backend adapters to pass specific invalidation objects
       # e.g. Darwin -> DirRescan, INotify -> MoveScan, etc.
-      def _queue_change(type, dir, rel_path, options)
+      def _queue_change(type, dir, rel_path, options = {})
         @snapshots[dir].invalidate(type, rel_path, options)
       end
 

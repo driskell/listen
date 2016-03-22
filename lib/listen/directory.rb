@@ -3,10 +3,10 @@ require 'set'
 module Listen
   # TODO: refactor (turn it into a normal object, cache the stat, etc)
   class Directory
-    def self.scan(snapshot, rel_path, options, recursive)
+    def self.scan(snapshot, rel_path, options)
       record = snapshot.record
 
-      _, previous = record.dir_entries(rel_path)
+      previous = record.dir_entries(rel_path)
 
       dir = Pathname.new(record.root)
       path = dir + rel_path
@@ -37,7 +37,7 @@ module Listen
           end
 
           # Only invalidate subdirectories if we're recursing or it is new
-          if recursive || old_type.nil?
+          if options[:recurse] || old_type.nil?
             snapshot.invalidate(:tree, item_rel_path, options)
           end
         else

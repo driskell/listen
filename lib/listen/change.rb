@@ -52,10 +52,10 @@ module Listen
       else
         if type == :tree
           # Invalid the entire directory tree
-          Directory.scan(self, rel_path, *options, recurse: true)
+          Directory.scan(self, rel_path, **options, recurse: true)
         elsif type == :dir
           # Invalid directory contents, but do not recurse
-          Directory.scan(self, rel_path, *options, recurse: false)
+          Directory.scan(self, rel_path, **options, recurse: false)
         else
           change = File.change(record, rel_path)
           return if !change || options[:silence]
